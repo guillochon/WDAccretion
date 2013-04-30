@@ -1,0 +1,73 @@
+#       Configuration file for the Sedov explosion problem
+#       (Sedov, L. I., 1959, Similarity and Dimensional Methods
+#       in Mechanics [New York:  Academic])
+
+DATAFILES *.dat
+
+REQUIRES Driver
+REQUIRES physics/Hydro
+REQUIRES physics/Eos/EosMain/Helmholtz
+REQUIRES Simulation/SimulationComposition
+REQUIRES Multispecies
+#REQUIRES physics/sourceTerms/Burn/BurnMain/nuclearBurn/Aprox13/
+
+#REQUIRES physics/Gravity/GravityMain/PointMass
+#REQUIRES Grid/GridSolvers/Multipole
+REQUIRES physics/Gravity/GravityMain/Poisson/Multipole
+#REQUIRES physics/Gravity/GravityMain/Poisson/Multigrid
+IF withParticles
+   REQUIRES Particles/ParticlesMain
+   REQUIRES Particles/ParticlesMapping
+   REQUIRES Particles/ParticlesInitialization/Lattice
+   REQUESTS IO/IOMain/
+   REQUESTS IO/IOParticles
+ENDIF
+
+# number of species (ionmax)
+SPECIES he4
+SPECIES c12
+SPECIES o16
+SPECIES ne20
+SPECIES mg24
+SPECIES si28
+SPECIES s32
+SPECIES ar36
+SPECIES ca40
+SPECIES ti44
+SPECIES cr48
+SPECIES fe52   
+SPECIES ni56
+
+#PARAMETER gamma            REAL    1.66667E0
+PARAMETER refine_val_cutoff_1 REAL 0.E0
+PARAMETER refine_val_cutoff_2 REAL 0.E0
+PARAMETER refine_val_cutoff_3 REAL 0.E0
+PARAMETER refine_val_cutoff_4 REAL 0.E0
+D sim_pAmbient       Initial ambient pressure
+PARAMETER sim_pAmbient     REAL    1.E-5
+
+D sim_rhoAmbient     Initial ambient density
+PARAMETER sim_rhoAmbient   REAL    1.
+
+D sim_nsubzones       Number of `sub-zones' in cells for applying 1d profile
+PARAMETER sim_nsubzones     INTEGER 7
+
+PARAMETER sim_xctr REAL 0.5E0
+PARAMETER sim_yctr REAL 0.5E0
+PARAMETER sim_zctr REAL 0.5E0
+PARAMETER ptxpos           REAL    0.E0
+PARAMETER ptypos           REAL    0.E0
+PARAMETER ptzpos           REAL    0.E0
+PARAMETER ptmass           REAL    0.E0
+
+PARAMETER eosModeInit  STRING "dens_temp"
+
+PARAMETER plot_var_13 STRING "none"
+PARAMETER plot_var_14 STRING "none"
+PARAMETER plot_var_15 STRING "none"
+PARAMETER plot_var_16 STRING "none"
+PARAMETER plot_var_17 STRING "none"
+PARAMETER plot_var_18 STRING "none"
+PARAMETER plot_var_19 STRING "none"
+PARAMETER plot_var_20 STRING "none"
+

@@ -1,0 +1,3 @@
+# Originally written by James Guillochon. README last updated 10/12/2010.
+
+This simulation setup models the accretion between two white dwarfs in a dynamically unstable system. It uses an input file which specifies the orbital evolution and mass accretion rate.

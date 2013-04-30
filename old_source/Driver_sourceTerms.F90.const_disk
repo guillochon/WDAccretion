@@ -1,0 +1,260 @@
+!!****if* source/Driver/DriverMain/Driver_sourceTerms
+!!
+!! NAME
+!!
+!!  Driver_sourceTerms
+!!
+!! SYNOPSIS
+!!
+!!  Driver_sourceTerms(integer(IN)::blockCount,
+!!                     integer(IN)::blockList(blockCount),
+!!                     real(IN) :: dt)
+!!
+!! DESCRIPTION
+!!
+!!  Driver for source terms. Instead of calling all these routines 
+!!  from Driver_evolveFlash we call Driver_sourceTerms which then
+!!  makes the calls to Cool, Burn, Heat and Stir.  If a unit is not
+!!  included in the simulation, the routine will be a stub and return
+!!  without doing anything.
+!! 
+!!
+!! ARGUMENTS
+!!  blockCount   : The number of blocks in the list
+!!  blockList    : The list of blocks on which to apply the stirring operator
+!!  dt           : the current timestep
+!!
+!!***
+
+
+
+subroutine Driver_sourceTerms(blockCount, blockList, dt) 
+
+  use Driver_data, ONLY: dr_simTime
+  use Flame_interface, ONLY : Flame_step
+  use Stir_interface, ONLY : Stir
+  use Heat_interface, ONLY : Heat
+  use Burn_interface, ONLY : Burn
+  use Cool_interface, ONLY : Cool
+  use Simulation_data, ONLY: sim_smallX
+  use Gravity_data, ONLY: grv_ptxpos
+  use Grid_interface, ONLY : Grid_getBlkIndexLimits, Grid_getBlkPtr, Grid_releaseBlkPtr,&
+    Grid_getCellCoords, Grid_putPointData, Grid_getMinCellSize
+  use Eos_interface, ONLY : Eos_wrapped, Eos
+  use gr_mpoleData, ONLY: Xcm, Ycm, Zcm
+  use PhysicalConstants_interface, ONLY : PhysicalConstants_get
+  use RuntimeParameters_interface, ONLY : RuntimeParameters_mapStrToInt, RuntimeParameters_get
+  implicit none
+#include "Eos.h"
+#include "constants.h"
+#include "Flash.h"
+
+  real, intent(IN)    :: dt
+  integer, intent(IN) :: blockCount
+  integer, dimension(blockCount), intent(IN):: blockList
+  
+  integer  ::  i, j, k, n
+  integer  ::  put, lb
+  real     ::  xx, yy, zz, local_cell_size, min_cell_size, c2, rnozz, cell_dens
+  real     ::  xnozz, ynozz, znozz, tnozz, nnozz, d1_2, d2_2, m1, m2
+  real     ::  vx, vy, vz, rho, t, ek, rho_amb, newton
+  integer  ::  istat
+
+  real,allocatable,dimension(:) :: xCoord,yCoord,zCoord
+  integer,dimension(2,MDIM) :: blkLimits,blkLimitsGC
+  integer :: sizeX,sizeY,sizeZ
+  real, dimension(NSPECIES) :: xn
+  real, dimension(:,:,:,:),pointer :: solnData
+  real, dimension(EOS_NUM) :: eosData
+  integer,dimension(MDIM) :: axis
+
+  logical :: gcell = .true.
+
+  
+  call Stir(blockCount, blockList, dt) 
+  call Flame_step(blockCount, blockList, dt)
+  call Burn(blockCount, blockList, dt) 
+  call Heat(blockCount, blockList, dt, dr_simTime) 
+  call Cool(blockCount, blockList, dt, dr_simTime) 
+
+  xnozz = 0.05e9
+  ynozz = 1.5e9
+  znozz = 1.5e9
+  tnozz = 0.0
+
+
+  !do lb = 1, blockCount
+  !    call Grid_getBlkIndexLimits(blockList(lb),blkLimits,blkLimitsGC)
+  !    sizeX = blkLimitsGC(HIGH,IAXIS) - blkLimitsGC(LOW,IAXIS) + 1
+  !    allocate(xCoord(sizeX),stat=istat)
+  !    sizeY = blkLimitsGC(HIGH,JAXIS) - blkLimitsGC(LOW,JAXIS) + 1
+  !    allocate(yCoord(sizeY),stat=istat)
+  !    sizeZ = blkLimitsGC(HIGH,KAXIS) - blkLimitsGC(LOW,KAXIS) + 1
+  !    allocate(zCoord(sizeZ),stat=istat)
+  !    cellsize = xCoord(2) - xCoord(1) 
+
+  !    if (NDIM == 3) call Grid_getCellCoords&
+  !                        (KAXIS, blockList(lb), CENTER, gcell, zCoord, sizeZ)
+  !    if (NDIM >= 2) call Grid_getCellCoords&
+  !                        (JAXIS, blockList(lb), CENTER,gcell, yCoord, sizeY)
+  !    call Grid_getCellCoords(IAXIS, blockList(lb), CENTER, gcell, xCoord, sizeX)
+  !    call Grid_getBlkPtr(blockList(lb),solnData)
+  !    do k = blkLimitsGC(LOW,KAXIS), blkLimitsGC(HIGH,KAXIS)
+  !       zz = zCoord(k)
+  !       do j = blkLimitsGC(LOW, JAXIS), blkLimitsGC(HIGH, JAXIS)
+  !          yy = yCoord(j)
+  !          do i = blkLimitsGC(LOW,IAXIS), blkLimitsGC(HIGH, IAXIS)
+  !             xx = xCoord(i)
+  !             t = 5.0e5
+  !             
+  !             !axis(IAXIS)=i
+  !             !axis(JAXIS)=j
+  !             !axis(KAXIS)=k
+  !             !call Grid_putPointData(blockList(lb), CENTER, TEMP_VAR, EXTERIOR, axis, t)    
+  !             solnData(TEMP_VAR,i,j,k)=t
+  !          enddo
+  !       enddo
+  !    enddo
+  !    call Grid_releaseBlkPtr(blockList(lb), solnData)
+  !    deallocate(xCoord)
+  !    deallocate(yCoord)
+  !    deallocate(zCoord)
+  !enddo
+
+  if (dr_simTime .ge. tnozz) then
+      call RuntimeParameters_get('sim_rhoAmbient',rho_amb)
+      call PhysicalConstants_get("Newton", newton)
+      call Grid_getMinCellSize(min_cell_size)
+      xn(1) = 1.0
+      xn(2) = 0.0
+      !xn(3) = 0.0
+      m1 = 0.6 * 2e33
+      m2 = 0.9 * 2e33
+      d1_2 = (xnozz - grv_ptxpos)**2
+      d2_2 = (xnozz - Xcm)**2
+
+      do lb = 1, blockCount
+          call Grid_getBlkIndexLimits(blockList(lb),blkLimits,blkLimitsGC)
+          sizeX = blkLimitsGC(HIGH,IAXIS) - blkLimitsGC(LOW,IAXIS) + 1
+          allocate(xCoord(sizeX),stat=istat)
+          sizeY = blkLimitsGC(HIGH,JAXIS) - blkLimitsGC(LOW,JAXIS) + 1
+          allocate(yCoord(sizeY),stat=istat)
+          sizeZ = blkLimitsGC(HIGH,KAXIS) - blkLimitsGC(LOW,KAXIS) + 1
+          allocate(zCoord(sizeZ),stat=istat)
+
+          if (NDIM == 3) call Grid_getCellCoords&
+                              (KAXIS, blockList(lb), CENTER, gcell, zCoord, sizeZ)
+          if (NDIM >= 2) call Grid_getCellCoords&
+                              (JAXIS, blockList(lb), CENTER,gcell, yCoord, sizeY)
+          call Grid_getCellCoords(IAXIS, blockList(lb), CENTER, gcell, xCoord, sizeX)
+          local_cell_size = abs(xCoord(2) - xCoord(1))
+          c2 = local_cell_size/2.
+          if ((xnozz .lt. xCoord(1) - (c2 + local_cell_size)) .or. (xnozz .gt. xCoord(sizeX) + c2)) cycle
+
+          !rnozz = 10*local_cell_size
+          !cell_dens = 2.0e33 * 1e-10 * dt / min_cell_size**3 * exp((dr_simTime - tnozz)/1.) / PI / 100.
+          do nnozz = 1, 100000
+              cell_dens = 2.0e33 * 1e-5 * dt / min_cell_size**3 / nnozz !* exp((dr_simTime - tnozz)/1.)
+              eosData(EOS_DENS) = cell_dens
+              eosData(EOS_TEMP) = 1e4
+              
+              call Eos(MODE_DENS_TEMP,1,eosData,xn)
+
+              rnozz = sqrt(nnozz/PI)*min_cell_size
+              rnozz = max(rnozz, 0.5*local_cell_size)
+              !print *, 'eos pres: ', eosData(EOS_PRES), 'grav_pres: ', cell_dens*min_cell_size*newton*rnozz*&
+              !    (m1 / (d1_2 + rnozz**2)**1.5 + m2 / (d2_2 + rnozz**2)**1.5)
+              if (eosData(EOS_PRES) .lt. cell_dens*min_cell_size*newton*rnozz*&
+                  (m1 / (d1_2 + rnozz**2)**1.5 + m2 / (d2_2 + rnozz**2)**1.5)) exit
+          enddo
+
+          !if ((xnozz .ge. xCoord(1) - (c2 + local_cell_size)) .and. (xnozz .le. xCoord(sizeX) + c2) .and. &
+          if ((ynozz .ge. yCoord(1) - (rnozz + local_cell_size)) .and. (ynozz .le. yCoord(sizeY) + (rnozz + local_cell_size)) .and. &
+              (znozz .ge. zCoord(1) - (rnozz + local_cell_size)) .and. (znozz .le. zCoord(sizeZ) + (rnozz + local_cell_size))) then
+
+              call Grid_getBlkPtr(blockList(lb),solnData)
+              do k = blkLimitsGC(LOW,KAXIS), blkLimitsGC(HIGH,KAXIS)
+                 zz = zCoord(k)
+                 if ((zz .lt. znozz - (rnozz + sqrt(2.)*local_cell_size)) .or. (zz .gt. znozz + (rnozz + sqrt(2.)*local_cell_size))) cycle
+                 do j = blkLimitsGC(LOW, JAXIS), blkLimitsGC(HIGH, JAXIS)
+                    yy = yCoord(j)
+                    if ((yy .lt. ynozz - (rnozz + sqrt(2.)*local_cell_size)) .or. (yy .gt. ynozz + (rnozz + sqrt(2.)*local_cell_size))) cycle
+                    do i = blkLimitsGC(LOW,IAXIS), blkLimitsGC(HIGH, IAXIS)
+                       xx = xCoord(i)
+                       if ((xx .lt. xnozz - (c2 + local_cell_size)) .or. (xx .gt. xnozz + c2)) cycle
+
+                       vx = 0.0d0
+                       vy = 0.0d0
+                       vz = 0.0d0
+                       t = 1.0e4
+
+                       if ((xx .ge. xnozz - c2) .and. (xx .le. xnozz + c2) .and. &
+                           (sqrt((yy-ynozz)**2 + (zz-znozz)**2) .le. rnozz)) then
+                           !vx = 1.0d6
+                           !solnData(VELX_VAR,i,j,k) = solnData(VELX_VAR,i,j,k) * solnData(DENS_VAR,i,j,k) / (solnData(DENS_VAR,i,j,k) + cell_dens)
+                           !solnData(VELY_VAR,i,j,k) = solnData(VELY_VAR,i,j,k) * solnData(DENS_VAR,i,j,k) / (solnData(DENS_VAR,i,j,k) + cell_dens)
+                           !solnData(VELZ_VAR,i,j,k) = solnData(VELZ_VAR,i,j,k) * solnData(DENS_VAR,i,j,k) / (solnData(DENS_VAR,i,j,k) + cell_dens)
+                           !ek = 0.5*solnData(DENS_VAR,i,j,k)*(solnData(VELX_VAR,i,j,k)**2 + solnData(VELY_VAR,i,j,k)**2 + solnData(VELZ_VAR,i,j,k)**2)
+                           solnData(DENS_VAR,i,j,k) = solnData(DENS_VAR,i,j,k) + cell_dens
+                           !if (dr_simTime .lt. tnozz + 2*dt) then
+                               solnData(VELX_VAR,i,j,k) = 0.0
+                               solnData(VELY_VAR,i,j,k) = 0.0
+                               solnData(VELZ_VAR,i,j,k) = 0.0
+                           !endif
+                           solnData(TEMP_VAR,i,j,k) = t
+                           do put=1,NSPECIES
+                              if (xn(put) == 0.0) xn(put) = sim_smallX
+                              solnData(SPECIES_BEGIN+put-1,i,j,k) = xn(put)
+                           enddo
+
+                           eosData(EOS_DENS) = solnData(DENS_VAR,i,j,k)
+                           eosData(EOS_TEMP) = t
+                           call Eos(MODE_DENS_TEMP,1,eosData,xn)
+                           solnData(PRES_VAR,i,j,k) = eosData(EOS_PRES)
+                           solnData(EINT_VAR,i,j,k) = eosData(EOS_EINT)
+                           solnData(ENER_VAR,i,j,k) = eosData(EOS_EINT)
+                       elseif (sqrt((yy-ynozz)**2 + (zz-znozz)**2) .le. (rnozz + sqrt(2.)*local_cell_size)) then
+                           solnData(DENS_VAR,i,j,k) = rho_amb
+                           !if (dr_simTime .lt. tnozz + 2*dt) then
+                               solnData(VELX_VAR,i,j,k) = 0.0
+                               solnData(VELY_VAR,i,j,k) = 0.0
+                               solnData(VELZ_VAR,i,j,k) = 0.0
+                           !endif
+                       !    if (xx .lt. xnozz - c2) vx = 1.0d6
+                       !    if (yy .lt. ynozz - c2) vy = 1.0d6
+                       !    if (yy .gt. ynozz + c2) vy = -1.0d6
+                       !    if (zz .lt. znozz - c2) vz = 1.0d6
+                       !    if (zz .gt. znozz + c2) vz = -1.0d6
+                           solnData(TEMP_VAR,i,j,k) = t
+                           do put=1,NSPECIES
+                              if (xn(put) == 0.0) xn(put) = sim_smallX
+                              solnData(SPECIES_BEGIN+put-1,i,j,k) = xn(put)
+                           enddo
+
+                           eosData(EOS_DENS) = solnData(DENS_VAR,i,j,k)
+                           eosData(EOS_TEMP) = t
+                           call Eos(MODE_DENS_TEMP,1,eosData,xn)
+                           solnData(PRES_VAR,i,j,k) = eosData(EOS_PRES)
+                           solnData(EINT_VAR,i,j,k) = eosData(EOS_EINT)
+                           solnData(ENER_VAR,i,j,k) = eosData(EOS_EINT)
+                       endif
+
+                               
+                    enddo
+                 enddo
+              enddo
+              call Grid_releaseBlkPtr(blockList(lb), solnData)
+              !call Eos_wrapped(MODE_DENS_TEMP,blkLimits,blockList(lb))
+              deallocate(xCoord)
+              deallocate(yCoord)
+              deallocate(zCoord)
+
+          endif
+      enddo
+  endif
+  !do lb = 1, blockCount
+  !    call Eos_wrapped(MODE_DENS_TEMP,blkLimits,blockList(lb))
+  !enddo
+
+  return
+end subroutine Driver_sourceTerms

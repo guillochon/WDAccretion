@@ -1,0 +1,64 @@
+#       Configuration file for the Sedov explosion problem
+#       (Sedov, L. I., 1959, Similarity and Dimensional Methods
+#       in Mechanics [New York:  Academic])
+
+DATAFILES *.dat
+
+REQUIRES Driver
+REQUIRES physics/Hydro
+REQUIRES physics/Eos/EosMain/Helmholtz
+REQUIRES Simulation/SimulationComposition
+REQUIRES Multispecies
+REQUIRES physics/sourceTerms/Burn/BurnMain/nuclearBurn/
+#REQUIRES physics/sourceTerms/Cool
+
+#REQUIRES physics/Gravity/GravityMain/PointMass
+#REQUIRES Grid/GridSolvers/Multipole
+REQUIRES physics/Gravity/GravityMain/Poisson/Multipole
+#REQUIRES physics/Gravity/GravityMain/Poisson/Multigrid
+IF withParticles
+   REQUIRES Particles/ParticlesMain
+   REQUIRES Particles/ParticlesMapping
+   REQUIRES Particles/ParticlesInitialization/Lattice
+   REQUESTS IO/IOMain/
+   REQUESTS IO/IOParticles
+ENDIF
+
+#PARAMETER gamma            REAL    1.66667E0
+PARAMETER refine_val_cutoff_1 REAL 0.E0
+PARAMETER refine_val_cutoff_2 REAL 0.E0
+PARAMETER refine_val_cutoff_3 REAL 0.E0
+PARAMETER refine_val_cutoff_4 REAL 0.E0
+PARAMETER sim_tAmbient     REAL    1.E6
+
+D sim_rhoAmbient     Initial ambient density
+PARAMETER sim_rhoAmbient   REAL    1.
+
+D sim_nsubzones       Number of `sub-zones' in cells for applying 1d profile
+PARAMETER sim_nsubzones     INTEGER 7
+
+PARAMETER sim_xctr         REAL 0.5E0
+PARAMETER sim_yctr         REAL 0.5E0
+PARAMETER sim_zctr         REAL 0.5E0
+PARAMETER sim_tNozz        REAL 0.0E0
+PARAMETER sim_tRelax       REAL 0.0E0
+PARAMETER sim_relaxRate    REAL 1.0E0
+PARAMETER sim_accMass      REAL 0.0E0
+PARAMETER sim_accTemp      REAL 0.0E0
+PARAMETER sim_donorMass    REAL 0.0E0
+PARAMETER sim_donorTemp    REAL 0.0E0
+PARAMETER sim_dataFile     STRING "quantities_interp.dat"
+
+PARAMETER larget           REAL 1.0E10
+
+PARAMETER plot_var_13 STRING "none"
+PARAMETER plot_var_14 STRING "none"
+PARAMETER plot_var_15 STRING "none"
+PARAMETER plot_var_16 STRING "none"
+PARAMETER plot_var_17 STRING "none"
+PARAMETER plot_var_18 STRING "none"
+PARAMETER plot_var_19 STRING "none"
+PARAMETER plot_var_20 STRING "none"
+PARAMETER plot_var_21 STRING "none"
+PARAMETER plot_var_22 STRING "none"
+

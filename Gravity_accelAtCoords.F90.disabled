@@ -1,0 +1,158 @@
+!!****if* source/physics/Gravity/GravityMain/PointMass/Gravity_accelAtCoords
+!!
+!! NAME
+!!
+!!  Gravity_accelAtCoords 
+!!
+!! SYNOPSIS
+!!
+!!  Gravity_accelAtCoords(integer(IN) :: numPoints,
+!!                      real(IN)      :: iCoords(:),
+!!                      real(IN)      :: jCoords(:),
+!!                      real(IN)      :: kCoords(:),
+!!                      integer(IN)   :: accelDir,
+!!                      real(OUT)     :: accel(numPoints),
+!!                      integer(IN)   :: blockID,
+!!                      integer(IN),optional :: potentialIndex)
+!!
+!! DESCRIPTION
+!!
+!!  This routine computes the gravitational acceleration in a
+!!  specified direction for a vector of points given by their
+!!  coordinates.
+!!
+!! ARGUMENTS
+!!
+!!  iCoords,jCoords,kCoords: coordinates of the points where the
+!!                           gravitational accelation is requested.
+!!                           Each of these arrays should either be
+!!                           of lenght numPoints (or more), in which
+!!                           case its nth value is used for the nth
+!!                           point; or else of dimension 1, in which
+!!                           case the value is used for all points.
+!!  accelDir :    The acceleration direction:  allowed values are 
+!!              IAXIS, JAXIS and IAXIS. These values are defined
+!!              in constants.h.
+!!  numPoints :  Number of cells to update in accel()
+!!  accel     :   Array to receive results
+!!  blockID  :  The local identifier of the block to work on,
+!!                not applicable in pointmass gravity.
+!!  potentialIndex :  optional, not applicable in pointmass gravity
+!! 
+!!***
+
+subroutine Gravity_accelAtCoords (numPoints, iCoords,jCoords,kCoords, accelDir,&
+     accel, blockID, &
+     potentialIndex)
+
+!=======================================================================
+
+  use Gravity_data, ONLY: grv_ptxpos, grv_ptypos, grv_ptzpos, grv_factor
+  use gr_mpoleData, ONLY: Xcm, Ycm, Zcm
+  use PhysicalConstants_interface, ONLY : PhysicalConstants_get
+
+  implicit none
+
+#include "Flash.h"
+#include "constants.h"
+
+  integer, intent(IN) :: accelDir, numPoints
+  real, dimension(:),INTENT(in) :: iCoords,jCoords,kCoords
+  real, dimension(numPoints),INTENT(OUT) :: accel
+  integer, intent(IN),optional :: blockID
+  integer, intent(IN),optional :: potentialIndex
+
+!==========================================================================
+
+#ifdef FIXEDBLOCKSIZE
+  real,dimension(numPoints) ::xCenter,yCenter,zCenter
+#else
+  real,allocatable,dimension(:) ::xCenter,yCenter,zCenter
+#endif
+  real :: dr32, tmpdr32, newton
+  real :: msum, m1, m2, d1, d12, theta, r, omega2
+  
+  integer :: ii
+
+!==============================================================================
+
+#ifndef FIXEDBLOCKSIZE
+  allocate(xCenter(numPoints))
+  allocate(yCenter(numPoints))
+  allocate(zCenter(numPoints))
+#endif
+  
+  call PhysicalConstants_get("Newton", newton)
+  m1 = 0.6 * 2e33
+  m2 = 0.9 * 2e33
+  d12 = abs(Xcm - grv_ptxpos)
+  msum = m1 + m2
+  d1 = m2 / msum * d12 !center of mass of binary (x coordinate)
+  omega2 = 1. / (d12**3 / newton / msum) 
+  
+  zCenter = 0.
+  yCenter = 0.
+  if (NDIM == 3) then 
+     if (size(kCoords) .GE. numPoints) then
+        zCenter(1:numPoints) = kCoords(1:numPoints) - grv_ptzpos
+     else
+        zCenter(1:numPoints) = kCoords(1) - grv_ptzpos
+     end if
+
+  endif
+  if (NDIM >= 2) then
+     if (size(jCoords) .GE. numPoints) then
+        yCenter(1:numPoints) = jCoords(1:numPoints) - grv_ptypos
+     else
+        yCenter(1:numPoints) = jCoords(1) - grv_ptypos
+     end if
+
+  endif
+  if (size(iCoords) .GE. numPoints) then
+     xCenter = iCoords(1:numPoints) - grv_ptxpos
+  else
+     xCenter = iCoords(1) - grv_ptxpos
+  end if
+
+  if (accelDir .eq. IAXIS) then                       ! x-component
+     do ii = 1, numPoints
+        tmpdr32 = xCenter(ii)*xCenter(ii) + yCenter(ii)*yCenter(ii)  + zCenter(ii)*zCenter(ii) 
+        dr32 = sqrt(tmpdr32)*tmpdr32
+
+        theta = atan(yCenter(ii)/(xCenter(ii) - d1))
+        r = sqrt((xCenter(ii) - d1)**2 + yCenter(ii)**2)
+        accel(ii) = grv_factor*xCenter(ii)/dr32 + omega2 * r * cos(theta)
+     end do
+
+  else if (accelDir .eq. JAXIS) then          ! y-component
+
+     do ii = 1, numPoints
+        tmpdr32 = xCenter(ii)*xCenter(ii) + yCenter(ii)*yCenter(ii)  + zCenter(ii)*zCenter(ii) 
+        dr32 = sqrt(tmpdr32)*tmpdr32
+
+        theta = atan(yCenter(ii)/(xCenter(ii) - d1))
+        r = sqrt((xCenter(ii) - d1)**2 + yCenter(ii)**2)
+        accel(ii) = grv_factor*yCenter(ii)/dr32 + omega2 * r * sin(theta)
+     end do
+
+  else if (accelDir .eq. KAXIS) then          ! z-component
+
+     do ii = 1, numPoints
+        tmpdr32 = xCenter(ii)*xCenter(ii) + yCenter(ii)*yCenter(ii)  + zCenter(ii)*zCenter(ii) 
+        dr32 = sqrt(tmpdr32)*tmpdr32
+
+        accel(ii) = grv_factor*zCenter(ii)/dr32
+     end do
+
+  end if
+
+!==============================================================================
+#ifndef FIXEDBLOCKSIZE
+  deallocate(xCenter)
+  deallocate(yCenter)
+  deallocate(zCenter)
+#endif
+
+  return
+
+end subroutine Gravity_accelAtCoords
